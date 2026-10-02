@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Happ
+GenericName=VPN Client
+Comment=Happ Proxy Client
+Exec=/usr/bin/happ %u
+Icon=happ
+Terminal=false
+Type=Application
+Categories=Network;VPN;Security;
+MimeType=x-scheme-handler/happ;
+StartupNotify=true
