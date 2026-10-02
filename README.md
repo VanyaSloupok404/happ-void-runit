@@ -6,19 +6,19 @@
 
 ## Архитектура и принцип работы
 
-Официальный клиент Happ ориентирован на дистрибутивы с systemd. В бинарнике GUI зашиты прямые вызовы systemctl start/enable для управления фоновым демоном happd.
+Официальный клиент Happ ориентирован на дистрибутивы с systemd. В бинарнике GUI зашиты вызовы `systemctl start/enable` для управления фоновым демоном `happd`.
 
-На Void Linux управление демоном берёт на себя runit:
-1. Демон happd запускается как системный сервис runit от пользователя root.
-2. Демон создаёт сокет IPC /tmp/happd.sock с правами 0666 (rw-rw-rw-), поднимает TUN-интерфейс happ-xray и управляет маршрутами ядра.
-3. Графический интерфейс happ запускается от непривилегированного пользователя, автоматически находит активный сокет /tmp/happd.sock и взаимодействует с демоном напрямую.
-4. Вызовы systemctl и повышение привилегий (sudo) со стороны GUI полностью исключаются.
+На Void Linux управление демоном передаётся runit:
+1. Демон `happd` запускается как системный сервис runit от пользователя `root`.
+2. Демон самостоятельно создаёт IPC-сокет `/tmp/happd.sock`, поднимает TUN-интерфейс `happ-xray` и выставляет маршруты ядра.
+3. Графический интерфейс `happ` запускается от обычного пользователя, подключается к активному сокету `/tmp/happd.sock` и работает напрямую по IPC.
+4. Вызовы `systemctl` и повышение привилегий (`sudo`) со стороны GUI полностью исключаются.
 
 ---
 
 ## 1. Зависимости
 
-Все необходимые Qt6-библиотеки упакованы внутри самого клиента Happ в директории /opt/happ/lib/. В Void Linux требуются лишь базовые системные пакеты для работы туннелей и распаковки deb-пакета:
+Qt6-библиотеки поставляются вендором в `/opt/happ/lib/`. В Void Linux требуются стандартные системные утилиты:
 
     sudo xbps-install -S binutils tar xz
 
@@ -26,25 +26,27 @@
 
 ## 2. Установка бинарников Happ
 
-1. Скачайте актуальный .deb-пакет со страницы релизов Happ-proxy/happ-desktop на GitHub.
-2. Распакуйте содержимое пакета в корень системы:
+1. Скачайте актуальный `.deb`-пакет со страницы релизов [Happ-proxy/happ-desktop](https://github.com/Happ-proxy/happ-desktop/releases).
+2. Распакуйте архив в корень системы:
 
-    # Распаковка deb-архива
     ar x happ_*_amd64.deb
     sudo tar -xf data.tar.* -C /
 
-    # Выставление прав на директории и бинарники
+    # Выставление прав
     sudo chown -R root:root /opt/happ
     sudo chmod +x /opt/happ/bin/Happ /opt/happ/bin/happd /opt/happ/bin/core/xray
-    sudo chmod 777 /opt/happ/bin/core/routing
 
-    # Создание симлинков в PATH
+    # Права для записи маршрутов пользователем
+    sudo chown root:users /opt/happ/bin/core/routing
+    sudo chmod 775 /opt/happ/bin/core/routing
+
+    # Симлинки в PATH
     sudo ln -sf /opt/happ/bin/Happ /usr/bin/happ
     sudo ln -sf /opt/happ/bin/happd /usr/bin/happd
 
-Внимание: Если инсталлятор создал файл /etc/sudoers.d/happ с директивой NOPASSWD: ALL, немедленно удалите его. Клиенту не требуются права root:
-
-    sudo rm -f /etc/sudoers.d/happ
+> **Безопасность:** Если при установке появился файл `/etc/sudoers.d/happ` с правилом `NOPASSWD: ALL` — немедленно удалите его. Демон работает через runit, и клиенту root-права не нужны:
+>
+>     sudo rm -f /etc/sudoers.d/happ
 
 ---
 
@@ -60,16 +62,15 @@
 
     sudo ln -s /etc/sv/happd /var/service/
 
-3. Проверьте статус службы:
+3. Проверьте статус:
 
     sudo sv status happd
-    # Ожидаемый вывод: run: happd: (pid ...) Xs
 
 ---
 
 ## 4. Интеграция с рабочим столом (Desktop Entry)
 
-Для отображения программы в лаунчерах приложений (Rofi, Wofi, Fuzzel) и поддержки импорта конфигураций по ссылкам happ://:
+Для интеграции с меню приложений (Rofi, Wofi, Fuzzel) и поддержки ссылок подписки `happ://`:
 
     sudo cp happ.desktop /usr/share/applications/
     sudo update-desktop-database
@@ -78,7 +79,15 @@
 
 ## 5. Управление сервисом
 
-- Запуск: sudo sv up happd
-- Остановка: sudo sv down happd
-- Перезапуск: sudo sv restart happd
-- Просмотр логов демона: tail -f /var/log/happd.log
+- Запуск: `sudo sv up happd`
+- Остановка: `sudo sv down happd`
+- Перезапуск: `sudo sv restart happd`
+- Просмотр логов: `tail -f /var/log/happd.log`
+
+---
+
+## Технические примечания по безопасности
+
+1. **Сокет `/tmp/happd.sock` (0666):** Права задаются кодом демона `happd` на этапе компиляции апстрима для связи непривилегированного GUI с root-процессом без polkit/sudo.
+2. **Логирование:** Демон `happd` имеет встроенный C++ обработчик, который пишет напрямую в `/var/log/happd.log`. Дополнительный лог-сервис runit не требуется.
+3. **Каталог `core/routing`:** Апстрим поставляет директорию с правами `777`. В данной инструкции доступ ограничен группой `users` с правами `775`.
